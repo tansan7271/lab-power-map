@@ -549,7 +549,7 @@ function curveWires() {
    10px 격자 위에서 A* 탐색으로 가로/세로 선만 써서 잇는다.
    - 꺾일수록, 다른 기기 박스 밑을 지날수록 비용↑ → 깔끔한 직각 경로
    - 먼저 그린 선과 같은 칸을 나란히 겹치면 큰 비용, 교차는 작은 비용 → 선끼리 간격을 두고 퍼짐
-   - 모서리는 45° 로 깎아서 기판 배선처럼                                            */
+   - 꺾이는 곳은 둥글게, 출발 직후·도착 직전에는 꺾지 않음 (화살표가 선 방향과 일치)                                            */
 const PCB = {G: 10, BEND: 4, ITEM: 30, LABEL: 3, OVER: 40, CROSS: 6};
 let routeCache = null, routeKey = '';
 function geomKey() { return items.map(i => `${i.id}:${i.x},${i.y},${i.w},${i.h},${i.parent || ''}`).join('|'); }
@@ -559,13 +559,13 @@ function getRoutes(fast = false) {
   if (k !== routeKey || !routeCache) { routeCache = pcbWires(); routeKey = k; }
   return routeCache;
 }
-function chamferD(pts, cut = 5) {
+function roundD(pts, rad = 8) {
   let d = `M${pts[0].x},${pts[0].y}`;
   for (let k = 1; k < pts.length - 1; k++) {
     const a = pts[k - 1], p = pts[k], b = pts[k + 1];
     const l1 = Math.hypot(p.x - a.x, p.y - a.y), l2 = Math.hypot(b.x - p.x, b.y - p.y);
-    const c = Math.min(cut, l1 / 2, l2 / 2);
-    d += ` L${p.x - (p.x - a.x) / l1 * c},${p.y - (p.y - a.y) / l1 * c} L${p.x + (b.x - p.x) / l2 * c},${p.y + (b.y - p.y) / l2 * c}`;
+    const c = Math.min(rad, l1 / 2, l2 / 2);
+    d += ` L${p.x - (p.x - a.x) / l1 * c},${p.y - (p.y - a.y) / l1 * c} Q${p.x},${p.y} ${p.x + (b.x - p.x) / l2 * c},${p.y + (b.y - p.y) / l2 * c}`;
   }
   const z = pts[pts.length - 1];
   return d + ` L${z.x},${z.y}`;
@@ -594,7 +594,9 @@ function pcbWires() {
     if (it.type === 'wall') fill(cellBox(it.x + 12, it.y - 16, it.x + 110, it.y + 16), LABEL);
   }
   const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
-  const g = new Float32Array(N * 4), prev = new Int32Array(N * 4);
+  // 상태 = (칸, 방향, 직진 길이 0/1/2+)
+  const g = new Float32Array(N * 12), prev = new Int32Array(N * 12);
+  const S = (i, d, run) => (i * 4 + d) * 3 + run;
   // 이진 힙
   let hf = [], hs = [], hg = [];
   const hpush = (f, st, gv) => {
@@ -620,16 +622,16 @@ function pcbWires() {
     const hh = (c, r) => Math.max(tb.c0 - c, 0, c - tb.c1) + Math.max(tb.r0 - r, 0, r - tb.r1);
     const start = (c, r, d) => {
       if (c < 0 || r < 0 || c >= W || r >= H || inT(c, r)) return;
-      const i = r * W + c, st = i * 4 + d, cost = obst[i] + occCost(i, d);
+      const i = r * W + c, st = S(i, d, 0), cost = obst[i] + occCost(i, d);
       if (cost < g[st]) { g[st] = cost; prev[st] = -1; hpush(cost + hh(c, r), st, cost); }
     };
     for (let c = sb.c0; c <= sb.c1; c++) { start(c, sb.r0 - 1, 3); start(c, sb.r1 + 1, 1); }
     for (let r = sb.r0; r <= sb.r1; r++) { start(sb.c0 - 1, r, 2); start(sb.c1 + 1, r, 0); }
     let guard = 0;
-    while (hf.length && guard++ < 400000) {
+    while (hf.length && guard++ < 1200000) {
       const [st, gs] = hpop();
       if (gs > g[st]) continue;
-      const i = st >> 2, d = st & 3, c = i % W, r = (i / W) | 0;
+      const run = st % 3, t = (st - run) / 3, i = t >> 2, d = t & 3, c = i % W, r = (i / W) | 0;
       if (inT(c, r)) {   // 도착
         const cells = []; let k = st;
         while (k >= 0) { cells.push(k); k = prev[k]; }
@@ -637,12 +639,14 @@ function pcbWires() {
       }
       for (let nd = 0; nd < 4; nd++) {
         if (nd === ((d + 2) & 3)) continue;
+        if (nd !== d && run < 1) continue;            // 꺾은 직후 또 꺾지 않기 (출발 직후 포함)
         const nc = c + DX[nd], nr = r + DY[nd];
         if (nc < 0 || nr < 0 || nc >= W || nr >= H) continue;
         const ni = nr * W + nc;
+        if (inT(nc, nr) && (nd !== d || run < 1)) continue;   // 도착 전 최소 두 칸은 곧게
         let cost = 1 + (nd !== d ? BEND : 0);
         if (!inT(nc, nr)) cost += obst[ni] + occCost(ni, nd);
-        const ns = ni * 4 + nd, ng = gs + cost;
+        const ns = S(ni, nd, nd === d ? Math.min(run + 1, 2) : 0), ng = gs + cost;
         if (ng < g[ns]) { g[ns] = ng; prev[ns] = st; hpush(ng + hh(nc, nr), ns, ng); }
       }
     }
@@ -655,20 +659,21 @@ function pcbWires() {
     const path = route(e.p, e.c);
     if (!path || path.length < 2) continue;   // 실패하면 곡선 그대로
     // 칸 좌표 → 점 목록 (꺾이는 곳만)
-    const cen = st => { const i = st >> 2; return {x: X0 + (i % W) * G + G / 2, y: Y0 + ((i / W) | 0) * G + G / 2}; };
-    const d0 = path[0] & 3, dl = path[path.length - 1] & 3;
+    const cellOf = st => ((st / 3) | 0) >> 2, dirOf = st => ((st / 3) | 0) & 3;
+    const cen = st => { const i = cellOf(st); return {x: X0 + (i % W) * G + G / 2, y: Y0 + ((i / W) | 0) * G + G / 2}; };
+    const d0 = dirOf(path[0]), dl = dirOf(path[path.length - 1]);
     const first = cen(path[0]), lastOut = cen(path[path.length - 2]);
     const pts = [{x: first.x - DX[d0] * G / 2, y: first.y - DY[d0] * G / 2}];
     for (let j = 0; j < path.length - 1; j++) {
-      const p = cen(path[j]), dIn = j ? path[j] & 3 : d0, dOut = path[j + 1] & 3;
+      const p = cen(path[j]), dIn = dirOf(path[j]), dOut = dirOf(path[j + 1]);
       if (dIn !== dOut) pts.push(p);
-      occ[path[j] >> 2] |= (dIn % 2 === 0 || dOut % 2 === 0 ? 1 : 0) | (dIn % 2 === 1 || dOut % 2 === 1 ? 2 : 0);
+      occ[cellOf(path[j])] |= (dIn % 2 === 0 || dOut % 2 === 0 ? 1 : 0) | (dIn % 2 === 1 || dOut % 2 === 1 ? 2 : 0);
     }
     const end = {x: lastOut.x + DX[dl] * G / 2, y: lastOut.y + DY[dl] * G / 2};
     pts.push(end);
     const ux = DX[dl], uy = DY[dl], A = 7, Wd = 4.5, bx = end.x - ux * A, by = end.y - uy * A;
     out[k] = {...e,
-      d: chamferD(pts),
+      d: roundD(pts),
       ch: `M${bx - uy * Wd},${by + ux * Wd} L${end.x},${end.y} L${bx + uy * Wd},${by - ux * Wd}`,
       s: {x: pts[0].x + DX[d0] * 4, y: pts[0].y + DY[d0] * 4}};
   }

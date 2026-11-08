@@ -202,6 +202,8 @@ svg .w.dim{opacity:.08}
 .fcard .fm i{display:block;height:100%;background:var(--ok)}
 .fcard .fm i.warn{background:var(--warn)} .fcard .fm i.bad{background:var(--bad)} .fcard .fm i.muted{background:#c4c9d0}
 .fcard.sel{box-shadow:0 0 0 3px var(--hl),0 12px 28px rgba(225,29,116,.22)}
+.fcard.path{box-shadow:0 0 0 2px var(--hl2),0 10px 24px rgba(15,23,42,.13)}
+.fcard.below{box-shadow:0 0 0 1.5px var(--hl2),0 10px 24px rgba(15,23,42,.13)}
 .fcard .wd{position:absolute;top:-6px;right:-5px;width:11px;height:11px;border-radius:50%;border:2px solid #fff}
 .fcard .wd.bad{background:var(--bad)} .fcard .wd.warn{background:var(--warn)}
 .flinks{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;opacity:0;transition:opacity .3s ease .35s}
@@ -888,16 +890,25 @@ function renderPanel() {
 /* ---------- 연결 구조 보기 ----------
    선택한 항목과 전원으로 이어진 것들만 떠올려 계층별로 정렬:
    위→아래 = 벽 콘센트 → 멀티탭 → 장비, 같은 단계(형제)끼리는 가로로 나란히 (넘치면 줄바꿈)  */
+// 선택한 항목이 속한 벽 콘센트(최상위 전원) 아래 전체를 보여준다.
+// 같은 콘센트 안에서 다른 항목을 눌러도 배치는 그대로, 강조만 바뀐다.
+function rootOf(id) { const a = ancestors(id); return a.length ? a[a.length - 1] : byId(id); }
 function focusSet(it) {
   const S = new Set();
-  const addUp = id => { S.add(id); ancestors(id).forEach(a => S.add(a.id)); };
-  if (it.type === 'desk') {
-    for (const m of deskMembers(it.id)) { addUp(m.id); if (isSource(m)) descendants(m.id).forEach(d => S.add(d)); }
-  } else {
-    addUp(it.id);
-    if (isSource(it)) descendants(it.id).forEach(d => S.add(d));
-  }
+  const addTree = r => { S.add(r.id); descendants(r.id).forEach(d => S.add(d)); };
+  if (it.type === 'desk') deskMembers(it.id).forEach(m => addTree(rootOf(m.id)));
+  else addTree(rootOf(it.id));
   return S;
+}
+// 강조 대상: 선택 항목(책상이면 자리 장비), 벽까지의 경로, (멀티탭이면) 그 아래
+function focusMarks(it) {
+  const sel = new Set(it.type === 'desk' ? deskMembers(it.id).map(m => m.id) : [it.id]);
+  const path = new Set(), below = new Set();
+  for (const id of sel) {
+    ancestors(id).forEach(a => path.add(a.id));
+    if (isSource(byId(id))) descendants(id).forEach(d => below.add(d));
+  }
+  return {sel, path, below};
 }
 const elOf = id => nodesEl.querySelector(`[data-id="${id}"]`);
 const byKind = (a, b) => (isSource(a) - isSource(b)) || (a.desk || '').localeCompare(b.desk || '') || a.name.localeCompare(b.name, 'ko', {numeric: true});
@@ -906,7 +917,7 @@ function positionFocus() {
   const sheet = isMobile() && document.body.classList.contains('has-sel') && tab === 'map' ? right.getBoundingClientRect().height : 0;
   fo.style.bottom = sheet ? sheet + 'px' : '0';
 }
-function fcardHTML(n, p, w, h, depth) {
+function fcardHTML(n, p, w, h, depth, mk) {
   let val = '', bar = '';
   if (isSource(n)) {
     const st = srcStatus(n);
@@ -917,7 +928,8 @@ function fcardHTML(n, p, w, h, depth) {
     val = `${fmt(n.watt)}W${d ? ` · ${esc(d.name)}` : ''}`;
   }
   const wf = worstFlag(itemFlags(n));
-  return `<div class="fcard ${n.id === selId ? 'sel' : ''}" data-sel="${n.id}" data-depth="${depth}" title="${esc(tipOf(n))}"
+  const st = mk.sel.has(n.id) ? 'sel' : mk.path.has(n.id) ? 'path' : mk.below.has(n.id) ? 'below' : '';
+  return `<div class="fcard ${st}" data-sel="${n.id}" data-depth="${depth}" title="${esc(tipOf(n))}"
     style="left:${p.x}px;top:${p.y}px;width:${w}px;height:${h}px;--c:${colorOf(n)}">
     <div class="ft">${tagHTML(n)}<span class="fn">${esc(dn(n))}</span></div><div class="fv">${val}</div>${bar}
     ${wf ? `<span class="wd ${wf[0]}"></span>` : ''}</div>`;
@@ -937,7 +949,7 @@ function renderFocus() {
   const availW = Math.max(240, stage.clientWidth - PAD * 2);
   const GX = mobile ? 10 : 14, GY = mobile ? 30 : 38, RG = mobile ? 20 : 24;
   const CW = mobile ? Math.min(170, Math.floor((availW - GX) / 2)) : 158, CH = 56;
-  const S = focusSet(it);
+  const S = focusSet(it), mk = focusMarks(it);
   const kidsIn = id => items.filter(i => i.parent === id && S.has(i.id)).sort(byKind);
   // 블록 크기 계산: 위에 자기 카드, 아래에 자식 블록들을 가로로 흘려 배치(넘치면 줄바꿈)
   const flow = (blocks, maxW) => {
@@ -992,12 +1004,14 @@ function renderFocus() {
     if (!ri) pts = Math.abs(sx - ex) < 1 ? [{x: sx, y: sy}, {x: ex, y: ey}] : [{x: sx, y: sy}, {x: sx, y: bus}, {x: ex, y: bus}, {x: ex, y: ey}];
     else { const tx = blockX - 8, b0 = a.y + CH + GY / 2;
       pts = [{x: sx, y: sy}, {x: sx, y: b0}, {x: tx, y: b0}, {x: tx, y: bus}, {x: ex, y: bus}, {x: ex, y: ey}]; }
-    const cls = 'w' + (p.type === 'tap' && c.type === 'tap' ? ' daisy' : ' hl2');
+    const onPath = mk.sel.has(c.id) || mk.path.has(c.id), under = mk.below.has(c.id);
+    const cls = 'w' + (onPath ? ' hl' : under ? ' hl2' : p.type === 'tap' && c.type === 'tap' ? ' daisy' : '');
     return `<g class="${cls}"><path class="ln" d="${roundD(pts, 8)}"/><path class="ch" d="M${ex - 4.5},${ey - 7} L${ex},${ey} L${ex + 4.5},${ey - 7}"/><circle cx="${sx}" cy="${sy + 3}" r="3.4"/></g>`;
   }).join('');
-  const cards = [...pos].map(([id, p]) => fcardHTML(byId(id), p, CW, CH, p.depth)).join('');
+  const cards = [...pos].map(([id, p]) => fcardHTML(byId(id), p, CW, CH, p.depth, mk)).join('');
   const title = it.type === 'desk' ? `${esc(it.name)} · 전원 연결` : `${esc(dn(it))}`;
-  const sub = isSource(it) ? '위: 전원 쪽 · 아래: 여기서 전기를 받는 것' : it.type === 'desk' ? '자리 장비와 전원 경로' : '벽 콘센트부터 이 기기까지';
+  const root = it.type === 'desk' ? null : rootOf(it.id);
+  const sub = root && root.id !== it.id ? `${esc(dn(root))}에 연결된 전체` : it.type === 'desk' ? '자리 장비가 연결된 콘센트 전체' : '여기에 연결된 전체';
   fo.innerHTML = `<div class="fbar"><b>${title}</b><span class="sub">${sub}</span><span class="spacer"></span>
       <button class="fbtn" data-act="fhide">지도에서 보기</button><button class="xbtn" data-act="desel" title="닫기">✕</button></div>
     <div class="fscroll"><div class="fin" style="width:${W}px;height:${H}px"><svg class="flinks">${linkHTML}</svg>${cards}</div></div>`;

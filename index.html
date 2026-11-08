@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E⚡%3C/text%3E%3C/svg%3E">
+<title>연구실 전력 배치도</title>
+<style>
+:root{
+  --bg:#f3f4f6; --panel:#fff; --line:#e3e6ea; --text:#1f2430; --muted:#6b7280;
+  --hl:#e11d74; --hl2:#f5a3c7; --ok:#16a34a; --warn:#d97706; --bad:#dc2626;
+  --wire:#7b8494; --daisy:#d97706;
+  --head:50px; --tabbar:0px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;color:var(--text);background:var(--bg);font-size:13px}
+body{overflow:hidden}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+
+header{height:var(--head);display:flex;align-items:center;gap:10px;padding:0 14px;background:#fff;border-bottom:1px solid var(--line)}
+header h1{font-size:15px;margin:0;font-weight:700;white-space:nowrap}
+.upd{color:var(--muted);font-size:12px;white-space:nowrap}
+.badge-ro{font-size:11px;color:#6b7280;background:#eef0f3;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.spacer{flex:1}
+.hbtn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 10px;white-space:nowrap}
+.hbtn:hover{background:#f6f7f9}
+
+#app{display:grid;grid-template-columns:270px 1fr 340px;height:calc(100% - var(--head))}
+aside{background:var(--panel);overflow:auto;-webkit-overflow-scrolling:touch}
+#left{border-right:1px solid var(--line)}
+#right{border-left:1px solid var(--line);padding:14px 16px 30px}
+
+/* left list */
+.sec{padding:12px 12px 6px}
+.tabs{display:flex;gap:4px;margin-bottom:8px}
+.tabs button{flex:1;border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 0;color:var(--muted)}
+.tabs button.on{background:#1f2430;color:#fff;border-color:#1f2430}
+.search{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-bottom:6px;font-size:16px}
+@media (min-width:861px){.search{font-size:13px}}
+.grp{font-size:11px;font-weight:700;color:var(--muted);padding:10px 8px 3px;display:flex;justify-content:space-between}
+.row{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.row:hover{background:#f3f4f6}
+.row.sel{background:#fde7f1}
+.rname{overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
+.rsub{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 4 auto}
+.rval{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;padding-left:6px;white-space:nowrap}
+.branch{color:#c4c9d0;margin-right:-2px}
+.chk{color:var(--ok);font-weight:700;font-size:11px}
+.fdot{width:7px;height:7px;border-radius:50%;flex:none}
+.fdot.bad{background:var(--bad)} .fdot.warn{background:var(--warn)} .fdot.muted{background:#c4c9d0}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.sq{width:10px;height:8px;border-radius:2px;flex:none;display:inline-block}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .muted{color:var(--muted)}
+.empty-list{color:var(--muted);padding:6px 8px;font-size:12px}
+
+/* stage */
+#stage{position:relative;overflow:hidden;background-color:#fafbfc;
+  background-image:linear-gradient(#e9ecf0 1px,transparent 1px),linear-gradient(90deg,#e9ecf0 1px,transparent 1px);
+  background-size:20px 20px;user-select:none;-webkit-user-select:none;cursor:grab;touch-action:none}
+#stage.panning{cursor:grabbing}
+#world{position:absolute;left:0;top:0;transform-origin:0 0}
+#nodes{position:absolute;left:0;top:0}
+#wires,#wiresTop{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:3}
+#wiresTop{z-index:5}
+
+.node{position:absolute}
+.rect{border:1.5px solid var(--c);background:color-mix(in srgb,var(--c) 15%,#fff);border-radius:7px;cursor:pointer;transition:opacity .15s,box-shadow .15s}
+.rect .lbl{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:2px 4px;text-align:center;overflow:hidden;line-height:1.2;font-size:11px}
+.rect.src .lbl{padding-bottom:8px}
+.rect.short .lbl{flex-direction:row;gap:5px}
+.rect.vert .lbl{writing-mode:vertical-rl;flex-direction:column}
+.rect .nm{font-weight:650;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:color-mix(in srgb,var(--c) 70%,#111)}
+.rect .val{font-size:10px;color:#475569;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rect .bar{position:absolute;left:4px;right:4px;bottom:3px;height:4px;background:rgba(0,0,0,.08);border-radius:2px;overflow:hidden}
+.rect .bar i{display:block;height:100%;background:var(--ok)}
+.rect .bar i.warn{background:var(--warn)} .rect .bar i.bad{background:var(--bad)} .rect .bar i.muted{background:#c4c9d0}
+.wdot{position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;border:2px solid #fff}
+.wdot.bad{background:var(--bad)} .wdot.warn{background:var(--warn)} .wdot.muted{background:#9ca3af}
+.ckm{position:absolute;top:1px;left:3px;font-size:10px;font-weight:800;color:var(--ok)}
+.k-desk{border-width:2px;border-radius:10px;background:color-mix(in srgb,var(--c) 10%,#fff)}
+.k-desk>.lbl{position:absolute;left:-2px;bottom:100%;height:auto;flex-direction:row;gap:6px;padding:0 2px 3px;font-size:12px;overflow:visible}
+.k-desk>.lbl .val{font-size:11px;color:color-mix(in srgb,var(--c) 70%,#333);font-weight:600}
+.k-zone{border:2px dashed var(--c);background:color-mix(in srgb,var(--c) 5%,transparent);border-radius:12px;pointer-events:none}
+.k-zone>.lbl{position:absolute;left:8px;top:5px;height:auto;padding:1px 6px;border-radius:5px;background:color-mix(in srgb,var(--c) 18%,#fff);font-size:12px}
+.wall{width:0;height:0}
+.wall .dotw{position:absolute;left:-9px;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--c);border:3px solid #fff;box-shadow:0 0 0 1.5px var(--c),0 1px 3px rgba(0,0,0,.25);cursor:pointer}
+.wall .wlbl{position:absolute;left:14px;top:-15px;white-space:nowrap;font-size:11px;line-height:1.25;background:rgba(255,255,255,.9);padding:1px 5px;border-radius:5px;border:1px solid var(--line);cursor:pointer}
+.wall .wlbl b{display:block;font-weight:700}
+.wall .wlbl span{font-variant-numeric:tabular-nums}
+.wall.flag-bad .dotw{box-shadow:0 0 0 2.5px var(--bad),0 1px 3px rgba(0,0,0,.25)}
+.rect.sel{box-shadow:0 0 0 3px var(--hl)}
+.rect.hl{box-shadow:0 0 0 2.5px var(--hl)}
+.rect.hl2{box-shadow:0 0 0 2px var(--hl2)}
+.wall.sel .dotw,.wall.hl .dotw{box-shadow:0 0 0 3px var(--hl)}
+.wall.hl2 .dotw{box-shadow:0 0 0 3px var(--hl2)}
+.dim{opacity:.22}
+.k-desk.dim{opacity:.4}
+
+/* wires: ● 전원 쪽(출발) → ❯ 꽂힌 쪽(도착) */
+svg .w{--wc:var(--wire)}
+svg .w.daisy{--wc:var(--daisy)}
+svg .w.hl2{--wc:var(--hl2)}
+svg .w.hl{--wc:var(--hl)}
+svg .w path{fill:none;stroke:var(--wc);stroke-linecap:round;stroke-linejoin:round}
+svg .w .ln{stroke-width:1.7;opacity:.8}
+svg .w.daisy .ln{stroke-dasharray:6 4;opacity:1}
+svg .w .ch{stroke-width:1.9}
+svg .w circle{fill:var(--wc)}
+svg .w.hl2 .ln{stroke-width:2.4;opacity:1;stroke-dasharray:none}
+svg .w.hl .ln{stroke-width:3.2;opacity:1;stroke-dasharray:10 12;animation:flow 1.1s linear infinite}
+svg .w.hl .ch{stroke-width:2.8}
+svg .w.dim{opacity:.08}
+@keyframes flow{to{stroke-dashoffset:-22}}
+
+.ui{position:absolute;z-index:20}
+#zoom{right:12px;bottom:12px;display:flex;gap:4px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:3px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+#zoom button{border:0;background:transparent;border-radius:5px;min-width:30px;height:28px}
+#zoom button:hover{background:#f1f2f4}
+#zoom span{min-width:42px;text-align:center;line-height:28px;color:var(--muted);font-size:12px}
+#zoom .sep{width:1px;height:18px;background:var(--line);min-width:0}
+#zoom #wireBtn{padding:0 8px;font-size:12px}
+#legend{left:12px;top:12px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:var(--muted);font-size:11px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 24px)}
+#legend svg{vertical-align:middle}
+#hint{left:12px;bottom:12px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:var(--muted);font-size:12px;max-width:calc(100% - 330px)}
+#hint b{color:var(--text)}
+#msg{left:50%;top:45%;transform:translate(-50%,-50%);text-align:center;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px 28px;line-height:1.7;display:none}
+
+/* right panel */
+.p-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.p-head h2{font-size:16px;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.xbtn{border:0;background:#f1f2f4;border-radius:50%;width:28px;height:28px;flex:none;font-size:14px;color:var(--muted)}
+.tag{font-size:10px;font-weight:700;color:#fff;border-radius:4px;padding:1px 5px;flex:none;line-height:16px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.stats div{background:#f6f7f9;border-radius:8px;padding:8px 10px}
+.stats span{display:block;font-size:11px;color:var(--muted)}
+.stats b{font-size:17px;font-variant-numeric:tabular-nums}
+.meter{height:6px;background:#eceef1;border-radius:3px;overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;border-radius:3px;background:var(--ok)}
+.meter i.warn{background:var(--warn)} .meter i.bad{background:var(--bad)} .meter i.muted{background:#c4c9d0}
+.meter.big{height:10px;border-radius:5px}
+.ports{display:flex;gap:3px;margin-top:4px;flex-wrap:wrap;justify-content:flex-end}
+.port{width:13px;height:13px;border-radius:3px;border:1.5px solid #c4c9d0;background:#fff;font-size:9px;line-height:10px;text-align:center}
+.port.used{background:#64748b;border-color:#64748b}
+.port.bad{border-color:var(--bad);background:repeating-linear-gradient(45deg,#fff 0 2px,#fca5a5 2px 4px)}
+.port.over{width:auto;padding:0 3px;border-color:var(--bad);color:var(--bad);font-weight:700}
+.flags{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.flag{font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px;white-space:nowrap}
+.flag.bad{background:#fee2e2;color:#b91c1c} .flag.warn{background:#fef3c7;color:#92400e} .flag.muted{background:#eef0f3;color:#6b7280}
+.blk{margin:14px 0}
+.blk-t{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between}
+.srow{padding:7px 8px;border-radius:7px;cursor:pointer}
+.srow:hover{background:#f3f4f6}
+.srow-top{display:flex;align-items:center;gap:6px}
+.srow .meter{margin-top:4px;height:5px}
+.irow{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;cursor:pointer}
+.irow:hover{background:#f3f4f6}
+.bignum{display:flex;align-items:baseline;gap:4px;font-variant-numeric:tabular-nums}
+.bignum b{font-size:28px}
+.bignum span{color:var(--muted);font-size:14px}
+.bignum em{font-style:normal;margin-left:auto;font-weight:800;font-size:18px}
+.kv{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f0f1f3}
+.kv span{color:var(--muted);flex:none}
+.kv b{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.link{color:#2f6fde;cursor:pointer;text-decoration:none}
+.link:hover{text-decoration:underline}
+.trow{display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:5px;cursor:pointer;white-space:nowrap}
+.trow:hover{background:#f3f4f6}
+.trow .rval{font-size:12px}
+.pathrow{padding:8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;cursor:pointer}
+.pathrow:hover{background:#fafafb}
+.pathrow .meter{height:5px;margin-top:5px}
+.arrow{text-align:center;color:#c4c9d0;line-height:12px;margin:-2px 0 4px}
+.memo{background:#fffbea;border:1px solid #f4e7b2;border-radius:8px;padding:8px 10px;white-space:pre-wrap;margin-top:12px}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:7px 12px}
+.btn:hover{background:#f6f7f9}
+.help{margin-top:22px;font-size:12px;color:var(--muted);line-height:1.7;background:#f8f9fb;border-radius:8px;padding:10px 12px}
+.help b{color:var(--text)}
+.sheet-handle{display:none}
+#tabbar{display:none}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2430;color:#fff;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:100}
+#toast.on{opacity:1}
+
+/* ---------- 모바일 ---------- */
+@media (max-width:860px){
+  :root{--head:46px;--tabbar:calc(56px + env(safe-area-inset-bottom))}
+  header{padding:0 12px;gap:8px}
+  header h1{font-size:14px}
+  .badge-ro,#copyTop{display:none}
+  #app{display:block;position:relative;height:calc(100dvh - var(--head) - var(--tabbar))}
+  #stage{position:absolute;inset:0}
+  #left,#right{position:absolute;display:none;z-index:30;border:0}
+  body[data-tab=list] #left{display:block;inset:0}
+  body[data-tab=summary] #right{display:block;inset:0}
+  body[data-tab=map].has-sel #right{display:block;left:0;right:0;bottom:0;max-height:46%;border-radius:16px 16px 0 0;
+    box-shadow:0 -6px 24px rgba(0,0,0,.14);padding-top:0}
+  body[data-tab=map].has-sel.sheet-full #right{max-height:88%}
+  body[data-tab=map].has-sel .sheet-handle{display:block;position:sticky;top:0;background:#fff;padding:8px 0 6px;margin:0 -16px 6px;z-index:2;cursor:pointer}
+  .sheet-handle i{display:block;width:40px;height:5px;border-radius:3px;background:#d6dae0;margin:0 auto}
+  #hint{display:none}
+  #zoom{top:auto;bottom:12px;right:10px}
+  #legend{top:8px;left:8px;font-size:10px;padding:4px 8px;gap:8px}
+  #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;height:var(--tabbar);padding-bottom:env(safe-area-inset-bottom);background:#fff;border-top:1px solid var(--line);z-index:50}
+  #tabbar button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:600;font-size:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+  #tabbar button span{font-size:18px;line-height:1}
+  #tabbar button.on{color:var(--hl)}
+  .row{padding:9px 8px}
+  .trow{padding:7px 6px}
+  #toast{bottom:calc(var(--tabbar) + 16px)}
+}
+</style>
+</head>
+<body data-tab="map">
+<header>
+  <h1>⚡ 연구실 전력 배치도</h1>
+  <span class="badge-ro">열람 전용</span>
+  <span class="upd" id="upd"></span>
+  <div class="spacer"></div>
+  <button class="hbtn" id="copyTop" data-act="copy">요약 텍스트 복사</button>
+</header>
+
+<div id="app">
+  <aside id="left">
+    <div class="sec">
+      <div class="tabs" id="listTabs">
+        <button data-lm="tree">전원 트리</button>
+        <button data-lm="type">종류별</button>
+      </div>
+      <input class="search" id="search" placeholder="이름·메모 검색" type="search">
+      <div id="list"></div>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <div id="world">
+      <div id="nodes"></div>
+      <svg id="wires" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="wiresTop" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="ui" id="legend">
+      <span><svg width="46" height="12"><circle cx="5" cy="6" r="3.5" fill="#7b8494"/><path d="M9 6 H38" stroke="#7b8494" stroke-width="1.7"/><path d="M34 2 L39 6 L34 10" fill="none" stroke="#7b8494" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg> 전원 쪽 → 꽂힌 기기</span>
+      <span><svg width="30" height="12"><path d="M2 6 H28" stroke="#d97706" stroke-width="1.8" stroke-dasharray="6 4"/></svg> 멀티탭→멀티탭</span>
+    </div>
+    <div class="ui" id="hint">멀티탭·콘센트를 클릭하면 부하와 연결된 기기가 강조됩니다 · 드래그/스크롤: 이동 · ⌘(Ctrl)+스크롤: 확대</div>
+    <div class="ui" id="zoom">
+      <button id="wireBtn" title="전선 표시 방식"></button><span class="sep"></span>
+      <button data-z="out">−</button><span id="zoomLbl">100%</span><button data-z="in">+</button><button data-z="fit" title="전체 보기">⤢</button>
+    </div>
+    <div class="ui" id="msg"></div>
+  </main>
+
+  <aside id="right"></aside>
+</div>
+
+<nav id="tabbar">
+  <button data-tab="map"><span>🗺️</span>지도</button>
+  <button data-tab="list"><span>☰</span>목록</button>
+  <button data-tab="summary"><span>📊</span>요약</button>
+</nav>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* =========================================================
+   열람 전용 뷰어. 데이터는 같은 폴더의 data.json
+   (편집기에서 "내보내기"한 파일을 그대로 넣으면 됩니다)
+   ========================================================= */
+const TYPES = {
+  wall:      {label:'벽 콘센트', color:'#334155'},
+  tap:       {label:'멀티탭',   color:'#7c4ddb'},
+  desk:      {label:'책상',     color:'#a07a4f'},
+  pc:        {label:'PC',       color:'#2f6fde'},
+  monitor:   {label:'모니터',   color:'#0f9b8e'},
+  appliance: {label:'가전',     color:'#e07b1f'},
+  etc:       {label:'기타',     color:'#7a7f8a'},
+  zone:      {label:'구조물',   color:'#94a3b8'},
+};
+const ORDER = ['wall','tap','desk','pc','monitor','appliance','etc','zone'];
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => Math.round(+n || 0).toLocaleString('ko-KR');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const isMobile = () => matchMedia('(max-width:860px)').matches;
+
+const stage = $('#stage'), world = $('#world'), nodesEl = $('#nodes'), wiresEl = $('#wires'), wiresTop = $('#wiresTop');
+const listEl = $('#list'), right = $('#right');
+
+let items = [];
+let view = {x: 40, y: 40, k: 1};
+let selId = null;
+let listMode = 'tree';
+let wireMode = localStorage.getItem('viewer-wire') || 'all';
+let query = '';
+let tab = 'map';
+
+/* ---------- 모델 ---------- */
+const byId = id => id ? items.find(i => i.id === id) : null;
+const isSource = it => !!it && (it.type === 'tap' || it.type === 'wall');
+const isDevice = it => !!it && ['pc','monitor','appliance','etc'].includes(it.type);
+const isCheckable = it => isDevice(it) || isSource(it);
+const kids = id => items.filter(i => i.parent === id);
+const deskMembers = id => items.filter(i => i.desk === id);
+const colorOf = it => it.color || TYPES[it.type].color;
+const center = it => it.type === 'wall' ? {x: it.x, y: it.y} : {x: it.x + it.w / 2, y: it.y + it.h / 2};
+const cm = px => Math.round(px / 2);
+const dn = it => {
+  if (it.type !== 'tap') return it.name;
+  const parts = [(it.memo || '').trim().replace(/\s+/g, ' '), +it.ports ? `${+it.ports}구` : ''].filter(Boolean);
+  return parts.length ? `${it.name} (${parts.join(', ')})` : it.name;
+};
+function normalize(arr) {
+  return arr.filter(i => i && TYPES[i.type]).map(i => ({
+    watt: 0, ports: 0, badPorts: 0, parent: null, desk: null, cleaned: false, memo: '', color: null, ...i,
+    x: +i.x || 0, y: +i.y || 0, w: i.type === 'wall' ? 0 : (+i.w || 40), h: i.type === 'wall' ? 0 : (+i.h || 40),
+  }));
+}
+function syncDesks() {
+  const desks = items.filter(i => i.type === 'desk');
+  for (const it of items) {
+    if (!(isDevice(it) || it.type === 'tap')) { it.desk = null; continue; }
+    const c = center(it);
+    it.desk = desks.filter(d => c.x >= d.x && c.x <= d.x + d.w && c.y >= d.y && c.y <= d.y + d.h)
+      .sort((a, b) => a.w * a.h - b.w * b.h)[0]?.id || null;
+  }
+}
+function loadOf(id, seen = new Set()) {
+  if (seen.has(id)) return 0;
+  seen.add(id);
+  let s = 0;
+  for (const c of kids(id)) s += c.type === 'tap' ? loadOf(c.id, seen) : (+c.watt || 0);
+  return s;
+}
+function descendants(id, acc = new Set()) {
+  for (const c of kids(id)) if (!acc.has(c.id)) { acc.add(c.id); if (isSource(c)) descendants(c.id, acc); }
+  return acc;
+}
+function ancestors(id) {
+  const out = []; let cur = byId(id), g = 0;
+  while (cur && cur.parent && g++ < 100) { const p = byId(cur.parent); if (!p) break; out.push(p); cur = p; }
+  return out;
+}
+const usable = it => Math.max(0, (+it.ports || 0) - (+it.badPorts || 0));
+const deskWatt = d => deskMembers(d.id).filter(isDevice).reduce((s, i) => s + (+i.watt || 0), 0);
+const level = pct => pct > 1 ? 'bad' : pct >= 0.8 ? 'warn' : 'ok';
+function srcStatus(it) {
+  const L = loadOf(it.id), C = +it.watt || 0;
+  const pct = C ? L / C : 0;
+  const n = kids(it.id).length, u = usable(it);
+  const flags = [];
+  if (!C) flags.push(['muted', '용량 미입력']);
+  else if (L > C) flags.push(['bad', '과부하']);
+  else if (pct >= 0.8) flags.push(['warn', '80% 이상']);
+  if ((+it.ports || 0) > 0 && n > u) flags.push(['bad', `구 부족 ${n}/${u}`]);
+  if (it.type === 'tap') {
+    const p = byId(it.parent);
+    if (p && p.type === 'tap') flags.push(['warn', '문어발']);
+    if (!p) flags.push(['muted', '전원 미연결']);
+  }
+  if (+it.badPorts > 0) flags.push(['warn', `불량 구 ${it.badPorts}`]);
+  return {L, C, pct, n, u, lv: C ? level(pct) : 'muted', flags};
+}
+function itemFlags(it) {
+  if (isSource(it)) return srcStatus(it).flags;
+  if (isDevice(it) && !byId(it.parent)) return [['muted', '미연결']];
+  return [];
+}
+const worstFlag = flags => flags.find(f => f[0] === 'bad') || flags.find(f => f[0] === 'warn') || null;
+function allIssues() {
+  const rank = {bad: 0, warn: 1, muted: 2}, out = [];
+  for (const it of items) for (const [lv, t] of itemFlags(it)) out.push({it, lv, t});
+  return out.sort((a, b) => rank[a.lv] - rank[b.lv]);
+}
+
+/* ---------- 뷰 ---------- */
+function toWorld(cx, cy) {
+  const s = stage.getBoundingClientRect();
+  return {x: (cx - s.left - view.x) / view.k, y: (cy - s.top - view.y) / view.k};
+}
+function applyView() {
+  world.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`;
+  stage.style.backgroundPosition = `${view.x}px ${view.y}px`;
+  stage.style.backgroundSize = `${20 * view.k}px ${20 * view.k}px`;
+  $('#zoomLbl').textContent = Math.round(view.k * 100) + '%';
+}
+function zoomAt(f, cx, cy) {
+  const s = stage.getBoundingClientRect();
+  const px = cx - s.left, py = cy - s.top;
+  const k2 = clamp(view.k * f, 0.15, 4), r = k2 / view.k;
+  view.x = px - (px - view.x) * r; view.y = py - (py - view.y) * r; view.k = k2;
+  applyView();
+}
+function bbox(it) {
+  return it.type === 'wall' ? {x1: it.x - 12, y1: it.y - 16, x2: it.x + 110, y2: it.y + 16}
+    : {x1: it.x, y1: it.y - (it.type === 'desk' ? 20 : 0), x2: it.x + it.w, y2: it.y + it.h};
+}
+function fitView() {
+  if (!items.length) return;
+  let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+  for (const it of items) { const r = bbox(it); a = Math.min(a, r.x1); b = Math.min(b, r.y1); c = Math.max(c, r.x2); d = Math.max(d, r.y2); }
+  const s = stage.getBoundingClientRect(), pad = isMobile() ? 16 : 50, top = isMobile() ? 40 : 50;
+  const k = clamp(Math.min((s.width - pad * 2) / Math.max(1, c - a), (s.height - pad - top) / Math.max(1, d - b)), 0.15, 1.5);
+  view = {k, x: (s.width - (c - a) * k) / 2 - a * k, y: top + (s.height - pad - top - (d - b) * k) / 2 - b * k};
+  applyView();
+}
+function visibleArea() {   // 모바일에서 아래 시트가 가리는 부분 제외
+  const s = stage.getBoundingClientRect();
+  const sheet = isMobile() && document.body.classList.contains('has-sel') ? right.getBoundingClientRect().height : 0;
+  return {w: s.width, h: Math.max(80, s.height - sheet)};
+}
+function reveal(id, minK = 0) {
+  const it = byId(id); if (!it) return;
+  if (view.k < minK) { const c0 = center(it), v0 = visibleArea(); view.k = minK; view.x = v0.w / 2 - c0.x * minK; view.y = v0.h / 2 - c0.y * minK; applyView(); return; }
+  const r = bbox(it), v = visibleArea();
+  const x1 = r.x1 * view.k + view.x, x2 = r.x2 * view.k + view.x, y1 = r.y1 * view.k + view.y, y2 = r.y2 * view.k + view.y;
+  if (x1 < 10 || y1 < 10 || x2 > v.w - 10 || y2 > v.h - 10) {
+    const c = center(it);
+    view.x = v.w / 2 - c.x * view.k; view.y = v.h / 2 - c.y * view.k;
+    applyView();
+  }
+}
+
+/* ---------- 강조 ---------- */
+function computeHL() {
+  const p = new Set(), s = new Set(), wp = new Set(), ws = new Set();
+  const it = byId(selId);
+  if (!it) return {active: false, p, s, wp, ws};
+  p.add(it.id);
+  if (isSource(it)) {
+    for (const d of descendants(it.id)) { p.add(d); wp.add(d); }
+    ws.add(it.id); for (const a of ancestors(it.id)) { s.add(a.id); ws.add(a.id); }
+  } else if (it.type === 'desk') {
+    for (const m of deskMembers(it.id)) {
+      p.add(m.id); wp.add(m.id);
+      for (const a of ancestors(m.id)) { s.add(a.id); ws.add(a.id); }
+      if (isSource(m)) for (const d of descendants(m.id)) { p.add(d); wp.add(d); }
+    }
+  } else if (it.type !== 'zone') {
+    wp.add(it.id); for (const a of ancestors(it.id)) { p.add(a.id); wp.add(a.id); }
+  }
+  for (const x of p) s.delete(x);
+  for (const x of wp) ws.delete(x);
+  return {active: it.type !== 'zone', sel: it.id, p, s, wp, ws};
+}
+function nodeCls(it, hl) {
+  if (it.id === selId) return 'sel';
+  if (!hl.active || it.type === 'zone') return '';
+  if (hl.p.has(it.id)) return 'hl';
+  if (hl.s.has(it.id)) return 'hl2';
+  if (it.type === 'desk' && deskMembers(it.id).some(m => hl.p.has(m.id) || hl.s.has(m.id))) return '';
+  return 'dim';
+}
+
+/* ---------- 지도 ---------- */
+const Z = {zone: 1, desk: 2, wall: 6};
+function tipOf(it) {
+  if (isSource(it)) { const st = srcStatus(it); return `${dn(it)} — ${fmt(st.L)} / ${st.C ? fmt(st.C) : '?'}W, ${st.n}/${st.u}구`; }
+  if (isDevice(it)) return `${it.name} — ${fmt(it.watt)}W${byId(it.parent) ? ' · 전원: ' + dn(byId(it.parent)) : ' (미연결)'}`;
+  if (it.type === 'desk') return `${it.name} — 장비 ${fmt(deskWatt(it))}W`;
+  return it.name;
+}
+function nodeHTML(it, hl) {
+  const c = colorOf(it), cls = nodeCls(it, hl), wf = worstFlag(itemFlags(it));
+  if (it.type === 'wall') {
+    const st = srcStatus(it);
+    return `<div class="node wall ${cls} ${wf ? 'flag-' + wf[0] : ''}" data-id="${it.id}" style="left:${it.x}px;top:${it.y}px;--c:${c};z-index:6" title="${esc(tipOf(it))}">
+      <div class="dotw"></div><div class="wlbl"><b>${esc(dn(it))}</b><span class="${st.lv}">${fmt(st.L)}/${st.C ? fmt(st.C) : '?'}W</span></div></div>`;
+  }
+  const kind = it.type === 'desk' ? 'k-desk' : it.type === 'zone' ? 'k-zone' : 'k-item';
+  let val = '', bar = '';
+  if (isSource(it)) {
+    const st = srcStatus(it);
+    val = `${fmt(st.L)}/${st.C ? fmt(st.C) : '?'}W`;
+    bar = `<div class="bar"><i class="${st.lv}" style="width:${Math.min(100, st.pct * 100)}%"></i></div>`;
+  } else if (isDevice(it)) val = `${fmt(it.watt)}W`;
+  else if (it.type === 'desk') val = `${fmt(deskWatt(it))}W`;
+  let shape = '';
+  if (kind === 'k-item') {
+    if (it.w < 34 || it.h < 18) shape = 'tiny';
+    else if (it.h >= it.w * 1.6 && it.w < 70) shape = 'vert';
+    else if (it.h < 40) shape = 'short';
+  }
+  const lbl = shape === 'tiny' ? '' : `<div class="lbl"><span class="nm">${esc(dn(it))}</span>${val ? `<span class="val">${val}</span>` : ''}</div>`;
+  return `<div class="node rect ${kind} ${shape} ${isSource(it) ? 'src' : ''} ${cls}" data-id="${it.id}"
+    style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;--c:${c};z-index:${Z[it.type] || 4}" title="${esc(tipOf(it))}">
+    ${lbl}${bar}
+    ${wf && kind === 'k-item' ? `<span class="wdot ${wf[0]}"></span>` : ''}
+    ${it.cleaned && kind === 'k-item' ? '<span class="ckm">✓</span>' : ''}
+  </div>`;
+}
+function renderNodes(hl) {
+  const sorted = [...items].sort((a, b) => (Z[a.type] || 4) - (Z[b.type] || 4) || b.w * b.h - a.w * a.h);
+  nodesEl.innerHTML = sorted.map(it => nodeHTML(it, hl)).join('');
+}
+
+/* ---------- 전선 배선 ----------
+   1) 각 연결마다 박스에서 상대를 향한 면(상/하/좌/우)을 고른다
+   2) 같은 면에 붙는 선끼리는 상대 위치 순으로 정렬해 면 위에 고르게 나눠 붙인다 (출발점 분산 → 덜 겹침)
+   3) 면에 수직으로 나가는 3차 곡선으로 잇는다
+   4) 출발점(전원 쪽) ●, 도착점(꽂힌 기기) ❯                                         */
+const NORM = {L: [-1, 0], R: [1, 0], T: [0, -1], B: [0, 1]};
+function sideToward(it, pt) {
+  const c = center(it), dx = (pt.x - c.x) / (it.w / 2 || 1), dy = (pt.y - c.y) / (it.h / 2 || 1);
+  return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'R' : 'L') : (dy >= 0 ? 'B' : 'T');
+}
+function routeWires() {
+  const edges = items.filter(it => byId(it.parent)).map(it => ({c: it, p: byId(it.parent)}));
+  const slots = new Map();
+  const add = (node, side, e, end, other) => {
+    const k = node.id + side;
+    if (!slots.has(k)) slots.set(k, {node, side, list: []});
+    slots.get(k).list.push({e, end, other});
+  };
+  for (const e of edges) {
+    const pc = center(e.p), cc = center(e.c);
+    if (e.p.type !== 'wall') add(e.p, sideToward(e.p, cc), e, 'sp', cc);
+    add(e.c, sideToward(e.c, pc), e, 'ep', pc);
+  }
+  for (const {node, side, list} of slots.values()) {
+    const horiz = side === 'T' || side === 'B';
+    list.sort((a, b) => horiz ? a.other.x - b.other.x : a.other.y - b.other.y);
+    const n = list.length, m = 0.12;   // 모서리 여백
+    list.forEach((s, i) => {
+      const t = m + (1 - 2 * m) * (i + 1) / (n + 1);
+      const x = side === 'L' ? node.x : side === 'R' ? node.x + node.w : node.x + node.w * t;
+      const y = side === 'T' ? node.y : side === 'B' ? node.y + node.h : node.y + node.h * t;
+      s.e[s.end] = {x, y, n: NORM[side]};
+    });
+  }
+  for (const e of edges) {
+    if (!e.sp) {   // 벽 콘센트: 점에서 상대 쪽으로
+      const a = center(e.p), b = e.ep, dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+      e.sp = {x: a.x + dx / L * 9, y: a.y + dy / L * 9, n: [dx / L, dy / L]};
+    }
+    const R = 4;
+    const s = {x: e.sp.x + e.sp.n[0] * R, y: e.sp.y + e.sp.n[1] * R};
+    const t = {x: e.ep.x + e.ep.n[0] * 2, y: e.ep.y + e.ep.n[1] * 2};
+    const dist = Math.hypot(t.x - s.x, t.y - s.y), k = clamp(dist * 0.42, 14, 160);
+    const c1 = {x: s.x + e.sp.n[0] * k, y: s.y + e.sp.n[1] * k}, c2 = {x: t.x + e.ep.n[0] * k, y: t.y + e.ep.n[1] * k};
+    let ux = t.x - c2.x, uy = t.y - c2.y, ul = Math.hypot(ux, uy);
+    if (ul < 0.01) { ux = -e.ep.n[0]; uy = -e.ep.n[1]; ul = 1; }
+    ux /= ul; uy /= ul;
+    const A = 7, W = 4.5, bx = t.x - ux * A, by = t.y - uy * A;
+    e.d = `M${s.x},${s.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${t.x},${t.y}`;
+    e.ch = `M${bx - uy * W},${by + ux * W} L${t.x},${t.y} L${bx + uy * W},${by - ux * W}`;
+    e.s = s;
+  }
+  return edges;
+}
+function drawWires(hl = computeHL()) {
+  const layers = [[], [], []];
+  for (const e of routeWires()) {
+    const id = e.c.id;
+    let c = 'w', L = 0;
+    if (e.c.type === 'tap' && e.p.type === 'tap') c += ' daisy';
+    if (hl.active && hl.wp.has(id)) { c += ' hl'; L = 2; }
+    else if (hl.active && hl.ws.has(id)) { c += ' hl2'; L = 1; }
+    else if (wireMode === 'sel') continue;
+    else if (hl.active) c += ' dim';
+    layers[L].push(`<g class="${c}"><path class="ln" d="${e.d}"/><path class="ch" d="${e.ch}"/><circle cx="${e.s.x}" cy="${e.s.y}" r="3.6"/></g>`);
+  }
+  // 강조된 선은 박스 위 레이어에 그려서 가려지지 않게
+  wiresEl.innerHTML = layers[0].join('');
+  wiresTop.innerHTML = layers[1].join('') + layers[2].join('');
+}
+
+/* ---------- 목록 ---------- */
+const swatch = it => it.type === 'wall' ? `<span class="dot" style="background:${colorOf(it)}"></span>` : `<span class="sq" style="background:${colorOf(it)}"></span>`;
+function rowHTML(it, depth = 0, showDesk = false) {
+  let val = '', fl = '';
+  if (isSource(it)) {
+    const st = srcStatus(it), w = worstFlag(st.flags);
+    val = `<span class="rval ${st.lv}">${fmt(st.L)}/${st.C ? fmt(st.C) : '?'}W</span>`;
+    if (w) fl = `<span class="fdot ${w[0]}" title="${esc(st.flags.map(f => f[1]).join(', '))}"></span>`;
+  } else if (it.type === 'desk') val = `<span class="rval">${deskMembers(it.id).length}개 · ${fmt(deskWatt(it))}W</span>`;
+  else if (it.type === 'zone') val = `<span class="rval">${cm(it.w)}×${cm(it.h)}cm</span>`;
+  else {
+    val = `<span class="rval">${fmt(it.watt)}W</span>`;
+    if (!byId(it.parent)) fl = '<span class="fdot muted" title="미연결"></span>';
+  }
+  const d = showDesk && byId(it.desk);
+  return `<div class="row ${selId === it.id ? 'sel' : ''}" data-sel="${it.id}" style="padding-left:${8 + depth * 16}px">
+    ${depth ? '<span class="branch">└</span>' : ''}${swatch(it)}
+    <span class="rname">${esc(dn(it))}</span>${d ? `<span class="rsub">· ${esc(d.name)}</span>` : ''}
+    ${it.cleaned ? '<span class="chk" title="점검·청소 완료">✓</span>' : ''}${fl}${val}</div>`;
+}
+function treeRows(id, depth, seen = new Set()) {
+  if (seen.has(id)) return ''; seen.add(id);
+  return kids(id).map(c => rowHTML(c, depth, true) + (isSource(c) ? treeRows(c.id, depth + 1, seen) : '')).join('');
+}
+function renderList() {
+  document.querySelectorAll('#listTabs button').forEach(b => b.classList.toggle('on', b.dataset.lm === listMode));
+  const q = query.trim().toLowerCase();
+  let h = '';
+  if (q || listMode === 'type') {
+    const match = it => !q || (it.name || '').toLowerCase().includes(q) || (it.memo || '').toLowerCase().includes(q);
+    for (const t of ORDER) {
+      const arr = items.filter(i => i.type === t && match(i));
+      if (arr.length) h += `<div class="grp"><span>${TYPES[t].label}</span><span>${arr.length}</span></div>` + arr.map(i => rowHTML(i, 0, true)).join('');
+    }
+    if (!h) h = '<div class="empty-list">검색 결과가 없습니다.</div>';
+  } else {
+    const walls = items.filter(i => i.type === 'wall');
+    const loose = items.filter(i => i.type === 'tap' && !byId(i.parent));
+    const unplugged = items.filter(i => isDevice(i) && !byId(i.parent));
+    if (walls.length) h += `<div class="grp"><span>벽 콘센트에서 시작</span></div>` + walls.map(w => rowHTML(w) + treeRows(w.id, 1)).join('');
+    if (loose.length) h += `<div class="grp"><span>전원 미연결 멀티탭</span><span>${loose.length}</span></div>` + loose.map(t => rowHTML(t, 0, true) + treeRows(t.id, 1)).join('');
+    if (unplugged.length) h += `<div class="grp"><span>아무 데도 안 꽂힌 장비</span><span>${unplugged.length}</span></div>` + unplugged.map(i => rowHTML(i, 0, true)).join('');
+  }
+  listEl.innerHTML = h || '<div class="empty-list">항목이 없습니다.</div>';
+}
+
+/* ---------- 패널 ---------- */
+const tagHTML = it => `<span class="tag" style="background:${colorOf(it)}">${TYPES[it.type].label}</span>`;
+const linkHTML = it => `<a class="link" data-sel="${it.id}">${esc(dn(it))}</a>`;
+const chainHTML = it => { const a = ancestors(it.id); return a.length ? a.map(linkHTML).join(' <span class="muted">›</span> ') : '<span class="muted">미연결</span>'; };
+const flagsHTML = flags => flags.length ? `<div class="flags">${flags.map(([lv, t]) => `<span class="flag ${lv}">${esc(t)}</span>`).join('')}</div>` : '';
+const doneHTML = it => it.cleaned ? '<span class="ok">완료</span>' : '<span class="muted">미완료</span>';
+function portsHTML(it, st) {
+  const P = +it.ports || 0; if (!P) return '';
+  const bad = Math.min(P, +it.badPorts || 0), ok = P - bad;
+  let h = '';
+  for (let i = 0; i < P; i++) h += `<span class="port ${i >= ok ? 'bad' : i < st.n ? 'used' : ''}"></span>`;
+  if (st.n > ok) h += `<span class="port over">+${st.n - ok}</span>`;
+  return `<div class="ports">${h}</div>`;
+}
+function srcRowHTML(s) {
+  const st = srcStatus(s);
+  return `<div class="srow" data-sel="${s.id}"><div class="srow-top">${swatch(s)}
+    <span class="rname">${esc(dn(s))}</span><span class="rval ${st.lv}">${fmt(st.L)} / ${st.C ? fmt(st.C) : '?'}W${st.C ? ` · ${Math.round(st.pct * 100)}%` : ''}</span></div>
+    <div class="meter"><i class="${st.lv}" style="width:${Math.min(100, st.pct * 100)}%"></i></div></div>`;
+}
+function subTreeHTML(id, depth = 0, seen = new Set()) {
+  if (seen.has(id)) return ''; seen.add(id);
+  return kids(id).map(c => {
+    let v;
+    if (isSource(c)) { const st = srcStatus(c); v = `<span class="rval ${st.lv}">${fmt(st.L)}/${st.C ? fmt(st.C) : '?'}W</span>`; }
+    else v = `<span class="rval">${fmt(c.watt)}W</span>`;
+    const d = byId(c.desk);
+    return `<div class="trow" data-sel="${c.id}" style="padding-left:${6 + depth * 16}px">${depth ? '<span class="branch">└</span>' : ''}${tagHTML(c)}
+      <span class="rname">${esc(dn(c))}</span>${d ? `<span class="rsub">· ${esc(d.name)}</span>` : ''}${v}</div>` + (isSource(c) ? subTreeHTML(c.id, depth + 1, seen) : '');
+  }).join('');
+}
+function overviewHTML() {
+  const devs = items.filter(isDevice), total = devs.reduce((s, i) => s + (+i.watt || 0), 0);
+  const srcs = items.filter(isSource).sort((a, b) => srcStatus(b).pct - srcStatus(a).pct);
+  const chk = items.filter(isCheckable), done = chk.filter(i => i.cleaned).length;
+  const iss = allIssues();
+  return `<div class="p-head"><h2>전체 요약</h2></div>
+    <div class="stats">
+      <div><span>장비</span><b>${devs.length}</b></div>
+      <div><span>장비 소비전력 합계</span><b>${fmt(total)}W</b></div>
+      <div><span>멀티탭</span><b>${items.filter(i => i.type === 'tap').length}</b></div>
+      <div><span>벽 콘센트</span><b>${items.filter(i => i.type === 'wall').length}</b></div>
+    </div>
+    <div class="blk"><div class="blk-t"><span>점검·청소 진행</span><span>${done} / ${chk.length}</span></div>
+      <div class="meter big"><i class="ok" style="width:${chk.length ? done / chk.length * 100 : 0}%"></i></div></div>
+    <div class="blk"><div class="blk-t"><span>콘센트·멀티탭 부하 (높은 순)</span></div>
+      ${srcs.map(srcRowHTML).join('') || '<div class="muted">없음</div>'}</div>
+    <div class="blk"><div class="blk-t"><span>점검 필요</span><span>${iss.length}</span></div>
+      ${iss.map(x => `<div class="irow" data-sel="${x.it.id}"><span class="flag ${x.lv}">${esc(x.t)}</span>${esc(dn(x.it))}</div>`).join('') || '<div class="muted">문제 없음 👍</div>'}</div>
+    <div class="btns"><button class="btn" data-act="copy">요약 텍스트 복사</button></div>
+    <div class="help">
+      <b>보는 법</b> — 멀티탭·콘센트를 누르면 부하가 계산되고, 거기서 전기를 받는 기기와 전선이 강조됩니다. 기기를 누르면 벽까지의 전원 경로가, 책상을 누르면 그 자리 장비가 보입니다.<br>
+      <b>전선</b> — <b>●</b>가 전원 쪽(콘센트·멀티탭), <b>❯</b>가 꽂힌 기기 쪽입니다. 주황 점선은 멀티탭에 멀티탭을 꽂은 연결입니다. 복잡하면 오른쪽 아래 "전선" 버튼으로 선택한 것만 볼 수 있습니다.<br>
+      <b>수치</b> — 기기 W는 정격(최대) 기준이라 실제 사용량보다 크게 잡혀 있습니다.
+    </div>`;
+}
+function detailHTML(it) {
+  let h = `<div class="sheet-handle" data-act="sheet"><i></i></div>
+    <div class="p-head">${tagHTML(it)}<h2>${esc(dn(it))}</h2><button class="xbtn" data-act="desel" title="닫기">✕</button></div>`;
+  if (isSource(it)) {
+    const st = srcStatus(it);
+    h += `<div class="bignum"><b class="${st.lv}">${fmt(st.L)}</b><span>/ ${st.C ? fmt(st.C) : '?'} W</span><em class="${st.lv}">${st.C ? Math.round(st.pct * 100) + '%' : ''}</em></div>
+      <div class="meter big"><i class="${st.lv}" style="width:${Math.min(100, st.pct * 100)}%"></i></div>
+      ${flagsHTML(st.flags)}
+      <div class="blk">
+        <div class="kv"><span>여유 전력</span><b class="${st.C && st.C - st.L < 0 ? 'bad' : ''}">${st.C ? fmt(st.C - st.L) + 'W' : '—'}</b></div>
+        <div class="kv"><span>구 사용</span><b>${st.n} / ${st.u}구${+it.badPorts ? ` <span class="warn">(불량 ${it.badPorts})</span>` : ''}${portsHTML(it, st)}</b></div>
+        ${it.type === 'tap' ? `<div class="kv"><span>전원</span><b>${chainHTML(it)}</b></div>` : ''}
+        ${byId(it.desk) ? `<div class="kv"><span>위치</span><b>${linkHTML(byId(it.desk))}</b></div>` : ''}
+        <div class="kv"><span>점검·청소</span><b>${doneHTML(it)}</b></div>
+      </div>
+      <div class="blk"><div class="blk-t"><span>여기서 전기를 받는 기기 (하위 포함)</span><span>${descendants(it.id).size}</span></div>
+        ${subTreeHTML(it.id) || '<div class="muted">아무것도 꽂혀있지 않음</div>'}</div>`;
+  } else if (it.type === 'desk') {
+    const mem = deskMembers(it.id);
+    const taps = [...new Set(mem.map(m => m.parent).filter(Boolean))].map(byId).filter(Boolean);
+    h += `<div class="bignum"><b>${fmt(deskWatt(it))}</b><span>W (장비 합계)</span></div>
+      <div class="kv"><span>크기</span><b>${cm(it.w)} × ${cm(it.h)} cm</b></div>
+      <div class="blk"><div class="blk-t"><span>자리 장비</span><span>${mem.length}</span></div>
+        ${mem.map(m => `<div class="trow" data-sel="${m.id}">${tagHTML(m)}<span class="rname">${esc(dn(m))}</span>
+          <span class="rsub">· ${byId(m.parent) ? esc(dn(byId(m.parent))) : '미연결'}</span>
+          <span class="rval">${isSource(m) ? '' : fmt(m.watt) + 'W'}</span></div>`).join('') || '<div class="muted">장비 없음</div>'}</div>
+      <div class="blk"><div class="blk-t"><span>사용 중인 멀티탭/콘센트</span></div>
+        ${taps.map(srcRowHTML).join('') || '<div class="muted">없음</div>'}</div>`;
+  } else if (it.type === 'zone') {
+    h += `<div class="kv"><span>크기</span><b>${cm(it.w)} × ${cm(it.h)} cm</b></div>`;
+  } else {
+    const anc = ancestors(it.id), d = byId(it.desk);
+    h += `<div class="bignum"><b>${fmt(it.watt)}</b><span>W</span></div>
+      <div class="blk">
+        <div class="kv"><span>책상</span><b>${d ? linkHTML(d) : '<span class="muted">없음</span>'}</b></div>
+        <div class="kv"><span>크기</span><b>${cm(it.w)} × ${cm(it.h)} cm</b></div>
+        <div class="kv"><span>점검·청소</span><b>${doneHTML(it)}</b></div>
+      </div>
+      <div class="blk"><div class="blk-t"><span>전원 경로 (가까운 순)</span></div>
+        ${anc.length ? anc.map((a, i) => {
+          const st = srcStatus(a);
+          return `<div class="pathrow" data-sel="${a.id}"><div class="srow-top">${tagHTML(a)}<span class="rname">${esc(dn(a))}</span>
+            <span class="rval ${st.lv}">${fmt(st.L)} / ${st.C ? fmt(st.C) : '?'}W</span></div>
+            <div class="meter"><i class="${st.lv}" style="width:${Math.min(100, st.pct * 100)}%"></i></div></div>${i < anc.length - 1 ? '<div class="arrow">▼</div>' : ''}`;
+        }).join('') : '<div class="muted">아직 어디에도 꽂혀있지 않음</div>'}</div>`;
+  }
+  if (it.memo) h += `<div class="memo">${esc(it.memo)}</div>`;
+  return h;
+}
+function renderPanel() {
+  const it = byId(selId);
+  right.innerHTML = it && !(isMobile() && tab === 'summary') ? detailHTML(it) : overviewHTML();
+  right.scrollTop = 0;
+}
+
+/* ---------- 전체 렌더 ---------- */
+function renderCanvas() { const hl = computeHL(); renderNodes(hl); drawWires(hl); }
+function renderAll() {
+  document.body.classList.toggle('has-sel', !!byId(selId));
+  $('#wireBtn').textContent = wireMode === 'all' ? '전선: 전체' : '전선: 선택만';
+  renderCanvas(); renderList(); renderPanel();
+}
+function setTab(t) {
+  tab = t; document.body.dataset.tab = t;
+  document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  if (t === 'summary') selId = null;
+  document.body.classList.remove('sheet-full');
+  renderAll();
+}
+function select(id, doReveal = false) {
+  selId = id;
+  document.body.classList.remove('sheet-full');
+  if (isMobile() && id && tab !== 'map') { tab = 'map'; document.body.dataset.tab = 'map'; document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === 'map')); }
+  renderAll();
+  if (doReveal && id) requestAnimationFrame(() => reveal(id, isMobile() ? 0.7 : 0));
+}
+
+/* ---------- 조작: 탭 / 드래그 이동 / 두 손가락 확대 ---------- */
+const pts = new Map();
+let gest = null;
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mid = (a, b) => ({x: (a.x + b.x) / 2, y: (a.y + b.y) / 2});
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('.ui') || e.button === 2) return;
+  stage.setPointerCapture(e.pointerId);
+  pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  if (pts.size === 1) {
+    gest = {type: 'press', id: e.target.closest('[data-id]')?.dataset.id || null, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false};
+  } else if (pts.size === 2) {
+    const [a, b] = [...pts.values()];
+    gest = {type: 'pinch', d0: dist(a, b), m0: mid(a, b), v0: {...view}};
+    stage.classList.remove('panning');
+  }
+});
+stage.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  if (!gest) return;
+  if (gest.type === 'pinch' && pts.size >= 2) {
+    const [a, b] = [...pts.values()], s = stage.getBoundingClientRect();
+    const m = mid(a, b), k = clamp(gest.v0.k * dist(a, b) / gest.d0, 0.15, 4);
+    const wx = (gest.m0.x - s.left - gest.v0.x) / gest.v0.k, wy = (gest.m0.y - s.top - gest.v0.y) / gest.v0.k;
+    view = {k, x: m.x - s.left - wx * k, y: m.y - s.top - wy * k};
+    applyView();
+  } else if (gest.type === 'press') {
+    const dx = e.clientX - gest.sx, dy = e.clientY - gest.sy;
+    if (!gest.moved && Math.hypot(dx, dy) < 6) return;
+    gest.moved = true; stage.classList.add('panning');
+    view.x = gest.vx + dx; view.y = gest.vy + dy; applyView();
+  }
+});
+function endPointer(e) {
+  if (!pts.has(e.pointerId)) return;
+  pts.delete(e.pointerId);
+  if (gest?.type === 'press' && !gest.moved && pts.size === 0 && e.type === 'pointerup') select(gest.id);
+  if (pts.size === 0) { gest = null; stage.classList.remove('panning'); }
+  else if (gest?.type === 'pinch') gest = null;   // 손가락 하나 남으면 멈춤 (튀는 것 방지)
+}
+stage.addEventListener('pointerup', endPointer);
+stage.addEventListener('pointercancel', endPointer);
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+  else { view.x -= e.deltaX; view.y -= e.deltaY; applyView(); }
+}, {passive: false});
+$('#zoom').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'wireBtn') { wireMode = wireMode === 'all' ? 'sel' : 'all'; localStorage.setItem('viewer-wire', wireMode); renderAll(); return; }
+  const z = b.dataset.z, s = stage.getBoundingClientRect();
+  if (z === 'fit') fitView();
+  else if (z) zoomAt(z === 'in' ? 1.25 : 1 / 1.25, s.left + s.width / 2, s.top + s.height / 2);
+});
+
+/* ---------- 목록 / 패널 / 탭 이벤트 ---------- */
+$('#listTabs').addEventListener('click', e => { const m = e.target.closest('button')?.dataset.lm; if (m) { listMode = m; renderList(); } });
+$('#search').addEventListener('input', e => { query = e.target.value; renderList(); });
+listEl.addEventListener('click', e => { const id = e.target.closest('[data-sel]')?.dataset.sel; if (id) select(id, true); });
+document.addEventListener('click', e => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'copy') return copySummary();
+  if (act === 'desel') return select(null);
+  if (act === 'sheet') { document.body.classList.toggle('sheet-full'); return; }
+  if (!e.target.closest('#right')) return;
+  const id = e.target.closest('[data-sel]')?.dataset.sel;
+  if (id) select(id, true);
+});
+$('#tabbar').addEventListener('click', e => { const t = e.target.closest('button')?.dataset.tab; if (t) setTab(t); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && !e.target.matches('input')) select(null); });
+let lastMobile = isMobile();
+addEventListener('resize', () => {
+  const m = isMobile();
+  if (m !== lastMobile) { lastMobile = m; if (!m) setTab('map'); renderAll(); fitView(); }
+});
+
+/* ---------- 요약 텍스트 ---------- */
+function copySummary() {
+  const lines = [`[연구실 전력 배치 요약] ${$('#upd').textContent}`, ''];
+  const line = (it, depth) => {
+    const pad = '   '.repeat(depth) + (depth ? '└ ' : '■ ');
+    if (isSource(it)) {
+      const st = srcStatus(it);
+      lines.push(`${pad}${dn(it)} — ${fmt(st.L)} / ${st.C ? fmt(st.C) : '?'}W${st.C ? ` (${Math.round(st.pct * 100)}%)` : ''} · ${st.n}/${st.u}구`);
+      kids(it.id).forEach(k => line(k, depth + 1));
+    } else {
+      const d = byId(it.desk);
+      lines.push(`${pad}${it.name} ${fmt(it.watt)}W${d ? ` [${d.name}]` : ''}`);
+    }
+  };
+  items.filter(i => i.type === 'wall').forEach(w => line(w, 0));
+  const loose = items.filter(i => i.type === 'tap' && !byId(i.parent));
+  if (loose.length) { lines.push('', '(전원 미연결 멀티탭)'); loose.forEach(t => line(t, 0)); }
+  const iss = allIssues().filter(x => x.lv !== 'muted' || x.t === '미연결');
+  if (iss.length) { lines.push('', '⚠ 점검 필요'); iss.forEach(x => lines.push(`- ${dn(x.it)}: ${x.t}`)); }
+  const text = lines.join('\n');
+  (navigator.clipboard?.writeText(text) || Promise.reject()).then(() => toast('요약을 클립보드에 복사했습니다'), () => {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove(); toast('요약을 클립보드에 복사했습니다');
+  });
+}
+let toastT;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 1800);
+}
+
+/* ---------- 시작 ---------- */
+setTab('map');
+fetch('data.json', {cache: 'no-cache'}).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
+  items = normalize(Array.isArray(d) ? d : d.items || []);
+  syncDesks();
+  if (d.exportedAt) {
+    const t = new Date(d.exportedAt);
+    $('#upd').textContent = `${t.getFullYear()}.${t.getMonth() + 1}.${t.getDate()} 기준`;
+  }
+  renderAll(); fitView();
+}).catch(err => {
+  const m = $('#msg');
+  m.style.display = 'block';
+  m.innerHTML = `데이터(data.json)를 불러오지 못했습니다.<br><small>${esc(err.message)} · 로컬에서는 웹 서버로 열어야 합니다.</small>`;
+});
+</script>
+</body>
+</html>

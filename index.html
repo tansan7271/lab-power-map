@@ -178,6 +178,41 @@ svg .w.dim{opacity:.08}
 .help b{color:var(--text)}
 .sheet-handle{display:none}
 #tabbar{display:none}
+/* ---------- 연결 구조 보기 (클릭 시 떠오르는 계층도) ---------- */
+#focus{position:absolute;left:0;right:0;top:0;bottom:0;z-index:15;display:none;flex-direction:column;
+  background:rgba(244,246,249,.78);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+#focus.on{display:flex}
+#focus.enter{animation:fIn .25s ease-out}
+@keyframes fIn{from{opacity:0}to{opacity:1}}
+.fbar{display:flex;align-items:center;gap:8px;padding:10px 12px 4px 16px;flex:none}
+.fbar b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.fbar .sub{color:var(--muted);font-size:12px;white-space:nowrap}
+.fbtn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 10px;font-size:12px;white-space:nowrap}
+.fbtn:hover{background:#f6f7f9}
+.fscroll{flex:1;overflow:auto;display:flex;-webkit-overflow-scrolling:touch}
+.fin{position:relative;margin:auto;flex:none}
+.fcard{position:absolute;background:#fff;border:1.5px solid color-mix(in srgb,var(--c) 55%,#fff);border-top:4px solid var(--c);border-radius:9px;
+  box-shadow:0 10px 24px rgba(15,23,42,.13),0 1px 3px rgba(0,0,0,.08);padding:5px 9px;cursor:pointer;
+  display:flex;flex-direction:column;justify-content:center;gap:2px;transform-origin:0 0;will-change:transform}
+.fcard:hover{box-shadow:0 12px 28px rgba(15,23,42,.18),0 1px 3px rgba(0,0,0,.08)}
+.fcard .ft{display:flex;align-items:center;gap:6px;min-width:0}
+.fcard .fn{font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fcard .fv{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.fcard .fm{height:4px;background:#eceef1;border-radius:2px;overflow:hidden}
+.fcard .fm i{display:block;height:100%;background:var(--ok)}
+.fcard .fm i.warn{background:var(--warn)} .fcard .fm i.bad{background:var(--bad)} .fcard .fm i.muted{background:#c4c9d0}
+.fcard.sel{box-shadow:0 0 0 3px var(--hl),0 12px 28px rgba(225,29,116,.22)}
+.fcard .wd{position:absolute;top:-6px;right:-5px;width:11px;height:11px;border-radius:50%;border:2px solid #fff}
+.fcard .wd.bad{background:var(--bad)} .fcard .wd.warn{background:var(--warn)}
+.flinks{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;opacity:0;transition:opacity .3s ease .35s}
+.flinks.on{opacity:1}
+.flinks .w .ln{stroke-width:2;opacity:.9}
+.focus-on #legend,.focus-on #zoom,.focus-on #hint{display:none}
+@media (max-width:860px){
+  body[data-tab=map].has-sel.fshow #right{max-height:40%}
+  .fbar{padding:8px 10px 2px 12px}
+  .fbar .sub{display:none}
+}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2430;color:#fff;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:100}
 #toast.on{opacity:1}
 
@@ -247,6 +282,7 @@ svg .w.dim{opacity:.08}
       <button data-z="out">−</button><span id="zoomLbl">100%</span><button data-z="in">+</button><button data-z="fit" title="전체 보기">⤢</button>
     </div>
     <div class="ui" id="msg"></div>
+    <div id="focus"></div>
   </main>
 
   <aside id="right"></aside>
@@ -293,6 +329,7 @@ let listMode = 'tree';
 let wireMode = localStorage.getItem('viewer-wire') || 'all';
 let query = '';
 let tab = 'map';
+let focusHidden = false, lastFocus = null;
 
 /* ---------- 모델 ---------- */
 const byId = id => id ? items.find(i => i.id === id) : null;
@@ -839,6 +876,7 @@ function detailHTML(it) {
         }).join('') : '<div class="muted">아직 어디에도 꽂혀있지 않음</div>'}</div>`;
   }
   if (it.memo) h += `<div class="memo">${esc(it.memo)}</div>`;
+  if (focusHidden && it.type !== 'zone') h += `<div class="btns"><button class="btn" data-act="fshow">연결 구조 보기</button></div>`;
   return h;
 }
 function renderPanel() {
@@ -847,12 +885,162 @@ function renderPanel() {
   right.scrollTop = 0;
 }
 
+/* ---------- 연결 구조 보기 ----------
+   선택한 항목과 전원으로 이어진 것들만 떠올려 계층별로 정렬:
+   위→아래 = 벽 콘센트 → 멀티탭 → 장비, 같은 단계(형제)끼리는 가로로 나란히 (넘치면 줄바꿈)  */
+function focusSet(it) {
+  const S = new Set();
+  const addUp = id => { S.add(id); ancestors(id).forEach(a => S.add(a.id)); };
+  if (it.type === 'desk') {
+    for (const m of deskMembers(it.id)) { addUp(m.id); if (isSource(m)) descendants(m.id).forEach(d => S.add(d)); }
+  } else {
+    addUp(it.id);
+    if (isSource(it)) descendants(it.id).forEach(d => S.add(d));
+  }
+  return S;
+}
+const elOf = id => nodesEl.querySelector(`[data-id="${id}"]`);
+const byKind = (a, b) => (isSource(a) - isSource(b)) || (a.desk || '').localeCompare(b.desk || '') || a.name.localeCompare(b.name, 'ko', {numeric: true});
+function positionFocus() {
+  const fo = $('#focus');
+  const sheet = isMobile() && document.body.classList.contains('has-sel') && tab === 'map' ? right.getBoundingClientRect().height : 0;
+  fo.style.bottom = sheet ? sheet + 'px' : '0';
+}
+function fcardHTML(n, p, w, h, depth) {
+  let val = '', bar = '';
+  if (isSource(n)) {
+    const st = srcStatus(n);
+    val = `<span class="${st.lv}">${fmt(st.L)}/${st.C ? fmt(st.C) : '?'}W${st.C ? ` · ${Math.round(st.pct * 100)}%` : ''}</span>`;
+    bar = `<div class="fm"><i class="${st.lv}" style="width:${Math.min(100, st.pct * 100)}%"></i></div>`;
+  } else {
+    const d = byId(n.desk);
+    val = `${fmt(n.watt)}W${d ? ` · ${esc(d.name)}` : ''}`;
+  }
+  const wf = worstFlag(itemFlags(n));
+  return `<div class="fcard ${n.id === selId ? 'sel' : ''}" data-sel="${n.id}" data-depth="${depth}" title="${esc(tipOf(n))}"
+    style="left:${p.x}px;top:${p.y}px;width:${w}px;height:${h}px;--c:${colorOf(n)}">
+    <div class="ft">${tagHTML(n)}<span class="fn">${esc(dn(n))}</span></div><div class="fv">${val}</div>${bar}
+    ${wf ? `<span class="wd ${wf[0]}"></span>` : ''}</div>`;
+}
+function renderFocus() {
+  const fo = $('#focus'), it = byId(selId);
+  const show = !!it && it.type !== 'zone' && !focusHidden && !(isMobile() && tab !== 'map');
+  stage.classList.toggle('focus-on', show);
+  document.body.classList.toggle('fshow', show);
+  if (!show) { fo.className = ''; fo.innerHTML = ''; lastFocus = null; return; }
+  const animate = lastFocus !== selId, firstOpen = lastFocus === null;
+  const prevRects = {};
+  if (animate) fo.querySelectorAll('.fcard').forEach(c => prevRects[c.dataset.sel] = c.getBoundingClientRect());
+  positionFocus();
+
+  const mobile = isMobile(), PAD = mobile ? 12 : 24;
+  const availW = Math.max(240, stage.clientWidth - PAD * 2);
+  const GX = mobile ? 10 : 14, GY = mobile ? 30 : 38, RG = mobile ? 20 : 24;
+  const CW = mobile ? Math.min(170, Math.floor((availW - GX) / 2)) : 158, CH = 56;
+  const S = focusSet(it);
+  const kidsIn = id => items.filter(i => i.parent === id && S.has(i.id)).sort(byKind);
+  // 블록 크기 계산: 위에 자기 카드, 아래에 자식 블록들을 가로로 흘려 배치(넘치면 줄바꿈)
+  const flow = (blocks, maxW) => {
+    const rows = []; let cur = [], cw = 0;
+    for (const b of blocks) {
+      if (cur.length && cw + GX + b.w > maxW) { rows.push({items: cur, w: cw}); cur = []; cw = 0; }
+      cw += (cur.length ? GX : 0) + b.w; cur.push(b);
+    }
+    if (cur.length) rows.push({items: cur, w: cw});
+    rows.forEach(r => r.h = Math.max(...r.items.map(b => b.h)));
+    return rows;
+  };
+  const measure = n => {
+    const ks = kidsIn(n.id);
+    if (!ks.length) return {n, w: CW, h: CH, rows: []};
+    const rows = flow(ks.map(measure), availW);
+    const w = Math.max(CW, ...rows.map(r => r.w));
+    const h = CH + GY + rows.reduce((s, r, i) => s + r.h + (i ? RG : 0), 0);
+    return {n, w, h, rows};
+  };
+  const pos = new Map(), links = [];
+  const place = (b, x, y, depth) => {
+    const card = {x: x + (b.w - CW) / 2, y, depth};
+    pos.set(b.n.id, card);
+    let ry = y + CH + GY;
+    b.rows.forEach((r, ri) => {
+      let rx = x + (b.w - r.w) / 2;
+      for (const c of r.items) {
+        place(c, rx, ry, depth + 1);
+        links.push({p: b.n, c: c.n, ri, rowY: ry, blockX: x});
+        rx += c.w + GX;
+      }
+      ry += r.h + RG;
+    });
+  };
+  const roots = [...S].map(byId).filter(n => !S.has(n.parent)).sort((a, b) => (b.type === 'wall') - (a.type === 'wall') || byKind(a, b));
+  const rootRows = flow(roots.map(measure), availW);
+  let y = PAD, maxW = 0;
+  for (const r of rootRows) {
+    let x = PAD + (availW - r.w) / 2;
+    for (const b of r.items) { place(b, x, y, 0); x += b.w + GX * 2; }
+    y += r.h + RG * 1.5; maxW = Math.max(maxW, r.w);
+  }
+  const W = Math.max(availW + PAD * 2, maxW + PAD * 2), H = y - RG * 1.5 + PAD;
+
+  // 연결선: 부모 카드 아래 ● → (첫 줄은 바로, 줄바꿈된 줄은 왼쪽 기둥을 타고) → 자식 카드 위 ❯
+  const linkHTML = links.map(({p, c, ri, rowY, blockX}) => {
+    const a = pos.get(p.id), b = pos.get(c.id);
+    const sx = a.x + CW / 2, sy = a.y + CH, ex = b.x + CW / 2, ey = b.y;
+    const bus = rowY - (ri ? RG / 2 : GY / 2);
+    let pts;
+    if (!ri) pts = Math.abs(sx - ex) < 1 ? [{x: sx, y: sy}, {x: ex, y: ey}] : [{x: sx, y: sy}, {x: sx, y: bus}, {x: ex, y: bus}, {x: ex, y: ey}];
+    else { const tx = blockX - 8, b0 = a.y + CH + GY / 2;
+      pts = [{x: sx, y: sy}, {x: sx, y: b0}, {x: tx, y: b0}, {x: tx, y: bus}, {x: ex, y: bus}, {x: ex, y: ey}]; }
+    const cls = 'w' + (p.type === 'tap' && c.type === 'tap' ? ' daisy' : ' hl2');
+    return `<g class="${cls}"><path class="ln" d="${roundD(pts, 8)}"/><path class="ch" d="M${ex - 4.5},${ey - 7} L${ex},${ey} L${ex + 4.5},${ey - 7}"/><circle cx="${sx}" cy="${sy + 3}" r="3.4"/></g>`;
+  }).join('');
+  const cards = [...pos].map(([id, p]) => fcardHTML(byId(id), p, CW, CH, p.depth)).join('');
+  const title = it.type === 'desk' ? `${esc(it.name)} · 전원 연결` : `${esc(dn(it))}`;
+  const sub = isSource(it) ? '위: 전원 쪽 · 아래: 여기서 전기를 받는 것' : it.type === 'desk' ? '자리 장비와 전원 경로' : '벽 콘센트부터 이 기기까지';
+  fo.innerHTML = `<div class="fbar"><b>${title}</b><span class="sub">${sub}</span><span class="spacer"></span>
+      <button class="fbtn" data-act="fhide">지도에서 보기</button><button class="xbtn" data-act="desel" title="닫기">✕</button></div>
+    <div class="fscroll"><div class="fin" style="width:${W}px;height:${H}px"><svg class="flinks">${linkHTML}</svg>${cards}</div></div>`;
+  fo.className = 'on' + (firstOpen ? ' enter' : '');
+  // 선택한 카드가 보이도록 스크롤 (넘칠 때만)
+  const fs = fo.querySelector('.fscroll'), sp = pos.get(selId);
+  if (sp) {
+    const fin = fo.querySelector('.fin');
+    if (fs.scrollHeight > fs.clientHeight) fs.scrollTop = clamp(fin.offsetTop + sp.y + CH / 2 - fs.clientHeight / 2, 0, fs.scrollHeight);
+    if (fs.scrollWidth > fs.clientWidth) fs.scrollLeft = clamp(fin.offsetLeft + sp.x + CW / 2 - fs.clientWidth / 2, 0, fs.scrollWidth);
+  }
+  const svg = fo.querySelector('.flinks');
+  if (!animate) { svg.style.transition = 'none'; svg.classList.add('on'); lastFocus = selId; return; }
+  // 떠오르기: 지도(또는 이전 계층도) 위치에서 새 자리로 이동
+  const sr = stage.getBoundingClientRect();
+  const els = [...fo.querySelectorAll('.fcard')], fins = els.map(c => c.getBoundingClientRect());
+  els.forEach((c, k) => {
+    const id = c.dataset.sel, f = fins[k];
+    let src = prevRects[id];
+    if (!src) {
+      const el = elOf(id), t = el && (el.querySelector('.dotw') || el), r = t?.getBoundingClientRect();
+      if (r && r.width > 0 && r.right > sr.left && r.left < sr.right && r.bottom > sr.top && r.top < sr.bottom) src = r;
+    }
+    if (src) {
+      c.style.transform = `translate(${src.left - f.left}px,${src.top - f.top}px) scale(${clamp(src.width / f.width, .1, 3)},${clamp(src.height / f.height, .1, 3)})`;
+      c.style.opacity = '.4';
+    } else { c.style.transform = 'translateY(16px)'; c.style.opacity = '0'; }
+  });
+  fo.offsetWidth;   // 강제 리플로우
+  els.forEach(c => {
+    const d = +c.dataset.depth * 50;
+    c.style.transition = `transform .5s cubic-bezier(.2,.8,.2,1) ${d}ms, opacity .3s ease ${d}ms`;
+    c.style.transform = ''; c.style.opacity = '';
+  });
+  requestAnimationFrame(() => svg.classList.add('on'));
+  lastFocus = selId;
+}
 /* ---------- 전체 렌더 ---------- */
 function renderCanvas() { const hl = computeHL(); renderNodes(hl); drawWires(hl); }
 function renderAll() {
   document.body.classList.toggle('has-sel', !!byId(selId));
   $('#wireBtn').textContent = wireMode === 'all' ? '전선: 전체' : '전선: 선택만';
-  renderCanvas(); renderList(); renderPanel();
+  renderCanvas(); renderList(); renderPanel(); renderFocus();
 }
 function setTab(t) {
   tab = t; document.body.dataset.tab = t;
@@ -862,6 +1050,7 @@ function setTab(t) {
   renderAll();
 }
 function select(id, doReveal = false) {
+  if (id !== selId) focusHidden = false;
   selId = id;
   document.body.classList.remove('sheet-full');
   if (isMobile() && id && tab !== 'map') { tab = 'map'; document.body.dataset.tab = 'map'; document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === 'map')); }
@@ -875,7 +1064,7 @@ let gest = null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const mid = (a, b) => ({x: (a.x + b.x) / 2, y: (a.y + b.y) / 2});
 stage.addEventListener('pointerdown', e => {
-  if (e.target.closest('.ui') || e.button === 2) return;
+  if (e.target.closest('.ui') || e.target.closest('#focus') || e.button === 2) return;
   stage.setPointerCapture(e.pointerId);
   pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
   if (pts.size === 1) {
@@ -913,6 +1102,7 @@ function endPointer(e) {
 stage.addEventListener('pointerup', endPointer);
 stage.addEventListener('pointercancel', endPointer);
 stage.addEventListener('wheel', e => {
+  if (e.target.closest('#focus')) return;   // 계층도는 일반 스크롤
   e.preventDefault();
   if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
   else { view.x -= e.deltaX; view.y -= e.deltaY; applyView(); }
@@ -933,7 +1123,16 @@ document.addEventListener('click', e => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'copy') return copySummary();
   if (act === 'desel') return select(null);
-  if (act === 'sheet') { document.body.classList.toggle('sheet-full'); return; }
+  if (act === 'sheet') { document.body.classList.toggle('sheet-full'); positionFocus(); return; }
+  if (act === 'fhide') { focusHidden = true; renderAll(); return; }
+  if (act === 'fshow') { focusHidden = false; renderAll(); return; }
+  const fo = e.target.closest('#focus');
+  if (fo) {
+    const id = e.target.closest('[data-sel]')?.dataset.sel;
+    if (id) select(id, true);
+    else if (!e.target.closest('.fbar')) { focusHidden = true; renderAll(); }   // 빈 곳 누르면 지도로
+    return;
+  }
   if (!e.target.closest('#right')) return;
   const id = e.target.closest('[data-sel]')?.dataset.sel;
   if (id) select(id, true);
@@ -944,6 +1143,7 @@ let lastMobile = isMobile();
 addEventListener('resize', () => {
   const m = isMobile();
   if (m !== lastMobile) { lastMobile = m; if (!m) setTab('map'); renderAll(); fitView(); }
+  else if ($('#focus').classList.contains('on')) renderFocus();
 });
 
 /* ---------- 요약 텍스트 ---------- */
